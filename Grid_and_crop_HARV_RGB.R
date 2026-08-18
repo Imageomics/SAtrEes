@@ -30,8 +30,8 @@ site      <- "HARV"
 cell_size <- 25    # m, parent grid
 n_sub     <- 16    # 16 x 16 sub-cells -> cell_size/n_sub = 1.5625 m each
 
-do_crops   <- FALSE  # write the 25 m RGB crops
-do_subgrid <- TRUE   # write the 16x16 sub-grid (HEAVY: 256 x #cells features)
+do_crops   <- TRUE  # write the 25 m RGB crops
+do_subgrid <- FALSE   # write the 16x16 sub-grid (HEAVY: 256 x #cells features)
 
 data_dir <- "/fs/ess/PUOM0017/ForestScaling/DeepForest"   # inputs (read-only)
 out_dir  <- "/fs/ess/PAS2136/SAtrEes"                     # all outputs
