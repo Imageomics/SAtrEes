@@ -30,11 +30,11 @@ site      <- "HARV"
 cell_size <- 25    # m, parent grid
 n_sub     <- 16    # 16 x 16 sub-cells -> cell_size/n_sub = 1.5625 m each
 
-do_crops   <- FALSE   # write the 25 m RGB crops
+do_crops   <- FALSE  # write the 25 m RGB crops
 do_subgrid <- TRUE   # write the 16x16 sub-grid (HEAVY: 256 x #cells features)
 
 data_dir <- "/fs/ess/PUOM0017/ForestScaling/DeepForest"   # inputs (read-only)
-out_dir  <- "/fs/ess/PUOM0017/SAtrEes"                     # all outputs
+out_dir  <- "/fs/ess/PAS2136/SAtrEes"                     # all outputs
 
 ## ---- Output dirs (created up front; hard stop if not writable) -------------
 shp_dir  <- file.path(out_dir, "Shapefiles")
@@ -47,7 +47,7 @@ grid_out    <- file.path(shp_dir, paste0(site, "_grid_25m.shp"))
 subgrid_out <- file.path(shp_dir, paste0(site, "_grid_25m_sub16.gpkg"))
 
 ## ---- Inputs ----------------------------------------------------------------
-aop_path <- file.path(data_dir, "Shapefiles", paste0(site, "_AOP.shp"))
+aop_path <- file.path(out_dir, "Shapefiles", paste0(site, "_Tiles_NorthBoundary.shp"))
 
 mosaic_dir <- Sys.glob(file.path(
   data_dir, "Imagery/NEON/DP3.30010.001/neon-aop-products/2022/FullSite/D01",

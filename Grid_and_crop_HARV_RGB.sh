@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=RGBsubgrid
+#SBATCH --job-name=RGBcrops
 #SBATCH --time=24:00:00 #
 #SBATCH --mail-type=ALL
-#SBATCH --output=./outfiles/RGBsubgrid.out
+#SBATCH --output=./outfiles/RGBcrops.out
 #SBATCH --account=PUOM0017
 #SBATCH --mem=64G
 
