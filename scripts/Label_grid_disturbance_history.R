@@ -61,23 +61,37 @@ library(sf)
 library(dplyr)
 
 ## ---- 0. Config ---------------------------------------------------------
+## Pass a grid file as a command-line arg to run against a different grid
+## (any polygon layer with a grid_id column) - e.g. for a local test file:
+##   Rscript Label_grid_disturbance_history.R HARV_grid_25m_sub16.gpkg
+## Outputs are then written next to that file instead of the cluster paths.
 site <- "HARV"
 
 out_dir <- "/fs/ess/PUOM0017/SAtrEes"   # matches Grid_and_crop_HARV_RGB.R
 shp_dir <- file.path(out_dir, "Shapefiles")
 
-grid_in  <- file.path(shp_dir, paste0(site, "_grid_25m.shp"))
-grid_out <- file.path(shp_dir, paste0(site, "_grid_25m_disturbance.gpkg"))
-combined_out <- file.path(shp_dir, paste0(site, "_disturbance_history_combined.gpkg"))
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) >= 1) {
+  grid_in    <- args[1]
+  out_base   <- tools::file_path_sans_ext(grid_in)
+  out_dir_l  <- dirname(grid_in)
+} else {
+  grid_in    <- file.path(shp_dir, paste0(site, "_grid_25m.shp"))
+  out_base   <- file.path(shp_dir, paste0(site, "_grid_25m"))
+  out_dir_l  <- shp_dir
+}
+
+grid_out     <- paste0(out_base, "_disturbance.gpkg")
+combined_out <- file.path(out_dir_l, paste0(site, "_disturbance_history_combined.gpkg"))
 
 ## Google Earth views: KML (full-fidelity, no field-length limit) and an
 ## ESRI Shapefile (reprojected to lat/lon; the .dbf format caps text fields
 ## at 254 characters, so long disturb_history strings get truncated - see
 ## write_earth_views() below).
-grid_kml_out      <- file.path(shp_dir, paste0(site, "_grid_25m_disturbance.kml"))
-grid_shp_out      <- file.path(shp_dir, paste0(site, "_grid_25m_disturbance.shp"))
-combined_kml_out  <- file.path(shp_dir, paste0(site, "_disturbance_history_combined.kml"))
-combined_shp_out  <- file.path(shp_dir, paste0(site, "_disturbance_history_combined.shp"))
+grid_kml_out      <- paste0(out_base, "_disturbance.kml")
+grid_shp_out      <- paste0(out_base, "_disturbance.shp")
+combined_kml_out  <- file.path(out_dir_l, paste0(site, "_disturbance_history_combined.kml"))
+combined_shp_out  <- file.path(out_dir_l, paste0(site, "_disturbance_history_combined.shp"))
 
 landuse_zip <- "data/hf110_land_use_history/hf110-01-gis.zip"
 gis_base    <- file.path("/vsizip", landuse_zip, "Harvard_Forest_Properties_GIS_Layers")
