@@ -8,6 +8,17 @@ Crops the NEON RGB camera mosaic (AOP product [DP3.30010.001](https://data.neons
 ## Requirements
 
 - R (tested with 4.4.0) with `sf` and `terra`
+- uv (tested with v0.12.5) for python package management
+
+## Python Environment Setup
+[`uv`](https://docs.astral.sh/uv/) is used for python environment management. Install `uv` using the following command:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then, set up the python environment using `uv sync`
+
 
 ## Usage
 
