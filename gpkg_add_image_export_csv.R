@@ -49,6 +49,8 @@ parent_grid <- file.path(shp_dir, "HARV_grid_256px.shp")
 ## Crops folder: flag whether each expected crop actually exists on disk
 ## (all-nodata cells were skipped by the crop writer, so some won't).
 crop_dir    <- file.path(home_dir, "Imagery", "NEON", site, "RGB_256px_crops")
+## Site boundary: flag each patch inside/outside HARV_Boundary by intersection.
+boundary_shp <- file.path(shp_dir, "HARV_Boundary.shp")
 include_wkt <- FALSE       # TRUE -> add a geometry_wkt column to the CSV
 
 ## ---- 1. Read ---------------------------------------------------------------
@@ -135,6 +137,19 @@ if (!is.na(crop_dir) && dir.exists(crop_dir)) {
       nrow(new_cols), "expected crops found.\n")
 }
 
+## in_boundary: TRUE if the patch intersects the HARV site boundary. Uses the
+## patch polygon (not its centroid), so a patch straddling the edge counts as
+## inside; switch st_geometry(g) to the centroids `cen` if you want a strict
+## in/out split with no straddlers.
+if (!is.na(boundary_shp) && file.exists(boundary_shp)) {
+  bnd <- st_union(st_transform(st_read(boundary_shp, quiet = TRUE), src_crs))
+  new_cols$in_boundary <- lengths(st_intersects(st_geometry(g), bnd)) > 0
+  cat("Boundary flag added:", sum(new_cols$in_boundary), "of",
+      nrow(new_cols), "patches intersect HARV_Boundary.\n")
+} else {
+  cat("NOTE: boundary shapefile not found; 'in_boundary' column skipped.\n")
+}
+
 ## ---- 8. Assemble & write CSV ----------------------------------------------
 out <- cbind(st_drop_geometry(g)[orig_cols], new_cols)
 if (include_wkt) out$geometry_wkt <- st_as_text(st_geometry(g))
@@ -159,6 +174,7 @@ desc <- c(
   centroid_lat = "Centroid latitude, WGS84 (EPSG:4326).",
   tile         = "Source NEON 1 km mosaic tile the parent crop came from (if joined).",
   image_exists = "TRUE if the expected crop file was found on disk (if checked).",
+  in_boundary  = "TRUE if the patch intersects the HARV site boundary (HARV_Boundary.shp), else FALSE.",
   geometry_wkt = "Patch polygon as WKT in the source CRS (if include_wkt=TRUE)."
 )
 dict <- data.frame(
