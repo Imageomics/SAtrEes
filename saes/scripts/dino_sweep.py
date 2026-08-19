@@ -10,13 +10,13 @@ def make_cfgs() -> list[dict]:
     shards_256 = "/fs/ess/PAS2136/SAtrEes/saev/shards/b0d74ed4"
 
     cfgs = []
-    for layer in [19, 21, 23]:
+    for layer in [-2]:
         for k in [16, 32, 64, 128]:
             for lr in [1e-3]:
                 cfgs.append({
                     "tags": ["satrees_dinov3"],
                     "slurm_acct": "PAS2136",
-                    # "slurm_partition": "nextgen",
+                    "slurm_partition": "nextgen",
                     "n_hours": 8.0,
                     "lr": lr,
                     "n_lr_warmup": 500,
@@ -36,14 +36,12 @@ def make_cfgs() -> list[dict]:
                         "shards": shards_256,
                         "batch_size": batch_size,
                         "min_buffer_fill": 0.2,
-                        "ignore_labels": [0],
                         "use_tmpdir": True,
                     },
                     "val_data": {
                         "layer": layer,
                         "shards": shards_256,
                         "batch_size": batch_size,
-                        "ignore_labels": [0],
                         "use_tmpdir": True,
                     },
                 })
