@@ -51,3 +51,6 @@ rsconnect/
 # Mac System
 .DS_Store
 
+# classifier output
+clf/output
+clf/slurm_output
