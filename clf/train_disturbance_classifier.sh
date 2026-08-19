@@ -13,7 +13,7 @@
 
 set -x
 
-cd /fs/ess/PAS2136/fangxun/FloraPalooza/scripts
+cd /fs/ess/PAS2136/fangxun/FloraPalooza/SAtrEes/clf
 
 echo "=== Job started: $(date) ==="
 
@@ -27,10 +27,13 @@ fi
 echo "--- Training classifier ---"
 python train_disturbance_classifier.py \
     --target disturb_recent_class \
-    --epochs 20 \
+    --balanced \
+    --exclude_not_mapped \
+    --max_years_since 20 \
+    --epochs 30 \
     --batch_size 4096 \
     --lr 1e-3 \
-    --hidden 512 \
-    --out_dir output/MLP_512
+    --hidden 1024 \
+    --out_dir output/MLP_1024_balanced_no-not-mapped/recent-20-years
 
 echo "=== Job finished: $(date) ==="
