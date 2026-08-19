@@ -2,9 +2,8 @@
 ## Label_grid_disturbance_history.R
 ##
 ## Labels each cell of the HARV 25 m grid (built by Grid_and_crop_HARV_RGB.R)
-## with its disturbance history: a chronologically ordered list of every
-## dated disturbance event on record for that cell, drawn from these layers
-## in data/hf110_land_use_history/hf110-01-gis.zip:
+## with its disturbance history, drawn from these layers in
+## data/hf110_land_use_history/hf110-01-gis.zip:
 ##
 ##   ph_ag_abandonment           field-abandonment + cutting years
 ##   ph_natural_disturbance2     ice/wind/tornado/fire/snow events
@@ -18,9 +17,28 @@
 ## classification, and the stands_* historical stand maps are deliberately
 ## left out - this is disturbance events only.)
 ##
-## Ordering: events with a known year are listed oldest -> newest. Events
-## with no reliable year (a handful of natural-disturbance records dated
-## only "prior"/"repeated") are appended at the end, tagged "(undated)".
+## Each cell gets two main labels plus a full-history sub-label:
+##   disturb_majority       area label - the single dominant event, chosen
+##                          by majority-wins area: whichever of the 4 source
+##                          layers covers the most of the cell wins, and its
+##                          most recent dated event in that cell is the text
+##                          (see step 5b for why layer-level, not per-event).
+##   disturb_majority_frac  fraction of the cell covered by that layer
+##   disturb_recent_class   time label - the class of whichever dated event
+##                          in the cell (across all 4 layers) is most recent;
+##                          see step 5c for the 9-class taxonomy. Cells whose
+##                          only events are undated fall back to that event's
+##                          class with disturb_years_since left NA.
+##   disturb_recent_label   the actual most-recent event's text + year
+##   disturb_years_since    2022 minus the most-recent event's year (2022 is
+##                          a fixed reference year, not "today" - re-derive
+##                          if a "years since" as of a different date is
+##                          ever needed)
+##   disturb_history        sub-label - every dated event on record for the
+##                          cell, oldest -> newest; undated events (a
+##                          handful of natural-disturbance records dated only
+##                          "prior"/"repeated") are appended last, tagged
+##                          "(undated)".
 ##
 ## Two layers are written, each in three formats:
 ##   HARV_grid_25m_disturbance          the 25 m grid, one row per cell
@@ -97,6 +115,7 @@ landuse_zip <- "data/hf110_land_use_history/hf110-01-gis.zip"
 gis_base    <- file.path("/vsizip", landuse_zip, "Harvard_Forest_Properties_GIS_Layers")
 
 min_frac <- 0.02   # ignore intersection slivers covering less of a cell than this
+years_since_ref <- 2022   # fixed reference year for disturb_years_since
 
 ## ---- 1. Helpers for pulling years out of free-text fields ---------------
 parse_year <- function(txt) {
@@ -159,6 +178,37 @@ summarize_events <- function(df) {
     mutate(across(c(disturb_first_yr, disturb_last_yr), ~ ifelse(is.infinite(.x), NA_real_, .x)))
 }
 
+## Bucket a silviculture TREATMENT description into one of 5 sub-classes.
+## Free text, so this is a best-effort keyword classifier, not exact.
+## Priority order (first match wins): clearcut > salvage > regen harvest >
+## thinning/tending > other. There's no "monitoring" class - inspection/
+## photo/measurement-only entries fall into "other" and are flagged
+## non-disturbance by is_monitoring_only() below, so step 5c skips past them
+## to the next most recent actual disturbance instead of surfacing them as
+## the cell's headline event.
+classify_silv_desc <- function(desc) {
+  d <- tolower(desc)
+  ifelse(grepl("clear ?cut|clearcutting|sawtimber|logging|harvest|plantation removal", d),
+         "Silviculture - clearcut",
+  ifelse(grepl("salvage", d),
+         "Silviculture - salvage",
+  ifelse(grepl("shelterwood|group selection|group cut|reproduction cut|coppice|cordwood", d),
+         "Silviculture - regen harvest",
+  ifelse(grepl("thin|weed|prun|plant|seed|fill|girdl|releas|underplant|improvement|selection cut|selective cut", d),
+         "Silviculture - thinning",
+         "Silviculture - other"))))
+}
+
+## An "other"-classed entry counts as non-disturbance (skip it when picking
+## the most-recent event) only if it looks purely administrative/monitoring
+## and didn't already match a structural keyword above - e.g. "inspection &
+## thinning" still classifies (and counts) as thinning; bare "inspection"
+## does not count as a disturbance at all.
+is_monitoring_only <- function(desc, cls) {
+  cls == "Silviculture - other" &
+    grepl("inspect|\\binsp\\b|photo|exam|measur|tally|cruise|report", tolower(desc))
+}
+
 ## Write a layer's KML (full-fidelity) and shapefile (lat/lon, short field
 ## names, disturb_history truncated to the DBF's 254-char text limit) views.
 ## hist_col names the long-text column to truncate for the shapefile.
@@ -187,13 +237,16 @@ skip   <- grepl("permanent", aband$FIELD_ABAN, ignore.case = TRUE)   # never aba
 ev_ab1 <- data.frame(
   key     = key_ab,
   ev_type = ifelse(pa$uncertain, "Field abandoned (approx.)", "Field abandoned"),
-  ev_year = pa$year
+  ev_year = pa$year,
+  ev_class = "Agricultural abandonment",
+  ev_is_disturbance = TRUE
 ) |> filter(!skip, !is.na(ev_year))
 cut_years <- extract_all_years(aband$CUTTING)
 ev_ab2 <- do.call(rbind, lapply(seq_along(cut_years), function(i) {
   yrs <- cut_years[[i]]
   if (length(yrs) == 0) return(NULL)
-  data.frame(key = key_ab[i], ev_type = "Cutting", ev_year = as.numeric(yrs))
+  data.frame(key = key_ab[i], ev_type = "Cutting", ev_year = as.numeric(yrs), ev_class = "Agricultural cutting",
+             ev_is_disturbance = TRUE)
 }))
 ev_aband   <- rbind(ev_ab1, ev_ab2)
 geom_aband <- st_sf(key = key_ab, geometry = st_geometry(aband))
@@ -203,12 +256,15 @@ key_nd <- paste0("natdist_", seq_len(nrow(nd)))
 pn     <- parse_year(nd$Date)
 ev_nd  <- data.frame(key = key_nd,
                       ev_type = ifelse(pn$uncertain, paste0(nd$TYPE, " (approx.)"), nd$TYPE),
-                      ev_year = pn$year)
+                      ev_year = pn$year,
+                      ev_class = "Natural disturbance",
+                      ev_is_disturbance = TRUE)
 geom_nd <- st_sf(key = key_nd, geometry = st_geometry(nd))
 
 hur    <- st_read(file.path(gis_base, "1938_hurricane_damage.shp"), quiet = TRUE) |> st_make_valid()
 key_hu <- paste0("hurr_", seq_len(nrow(hur)))
-ev_hur <- data.frame(key = key_hu, ev_type = paste0("1938 hurricane (", hur$DAMAGE, ")"), ev_year = 1938)
+ev_hur <- data.frame(key = key_hu, ev_type = paste0("1938 hurricane (", hur$DAMAGE, ")"), ev_year = 1938,
+                      ev_class = "1938 hurricane", ev_is_disturbance = TRUE)
 geom_hur <- st_sf(key = key_hu, geometry = st_geometry(hur))
 
 silv   <- st_read(file.path(gis_base, "silviculture_treatments_08_21_2010.shp"), quiet = TRUE) |> st_make_valid()
@@ -216,7 +272,9 @@ key_sv <- paste0("silv_", seq_len(nrow(silv)))
 ev_silv <- do.call(rbind, lapply(seq_len(nrow(silv)), function(i) {
   ev <- parse_silv_events(silv$TREATMENT[i])
   if (is.null(ev)) return(NULL)
-  data.frame(key = key_sv[i], ev_type = ev$desc, ev_year = ev$year)
+  cls <- classify_silv_desc(ev$desc)
+  data.frame(key = key_sv[i], ev_type = ev$desc, ev_year = ev$year, ev_class = cls,
+             ev_is_disturbance = !is_monitoring_only(ev$desc, cls))
 }))
 geom_silv <- st_sf(key = key_sv, geometry = st_geometry(silv))
 
@@ -268,14 +326,74 @@ cell_events <- ov |>
 
 max_frac <- ov |> group_by(grid_id) |> summarise(disturb_max_frac = max(frac), .groups = "drop")
 
+## ---- 5b. Majority-wins main label -----------------------------------------
+## "Majority" is decided at the source-layer level (Field abandonment /
+## Natural disturbance / 1938 hurricane / Silviculture treatment), not per
+## individual event: three of the four layers already give one clean type
+## per record, but silviculture is a log of many co-located treatments on
+## the same polygon, so competing on raw event text would let it fragment
+## into a dozen small slices and never win against a single clean label from
+## another layer. Whichever layer covers the most of the cell's area wins;
+## its label text is that layer's most recent dated event in the cell (a
+## simple, explainable tie-break for silviculture's multi-event polygons).
+layer_label <- c(aband = "Field abandonment", natdist = "Natural disturbance",
+                  hurr = "1938 hurricane", silv = "Silviculture treatment")
+ov$source_layer <- layer_label[sub("_[0-9]+$", "", ov$key)]
+
+layer_area <- ov |> group_by(grid_id, source_layer) |> summarise(layer_frac = sum(frac), .groups = "drop")
+majority_layer <- layer_area |> group_by(grid_id) |> slice_max(layer_frac, n = 1, with_ties = FALSE) |> ungroup()
+
+majority_label <- ov |>
+  inner_join(majority_layer, by = c("grid_id", "source_layer")) |>
+  left_join(events, by = "key", relationship = "many-to-many") |>
+  filter(!is.na(ev_type)) |>
+  group_by(grid_id) |>
+  arrange(is.na(ev_year), desc(ev_year), .by_group = TRUE) |>
+  slice(1) |>
+  ungroup() |>
+  transmute(grid_id, disturb_majority = paste0(ev_type, ifelse(is.na(ev_year), "", paste0(" (", ev_year, ")"))))
+
+majority <- majority_layer |>
+  select(grid_id, disturb_majority_frac = layer_frac) |>
+  left_join(majority_label, by = "grid_id")
+
+## ---- 5c. Most-recent-disturbance classification ---------------------------
+## Time label, independent of the area-based majority label above: whichever
+## dated event is most recent (across all 4 layers) sets the cell's class.
+## Monitoring-only silviculture entries (ev_is_disturbance == FALSE) are
+## excluded before picking "most recent" so a 2005 inspection visit doesn't
+## mask a 1980 clearcut as the cell's headline event - it can still show up
+## in disturb_history, just not here. A cell whose only events are undated
+## falls back to that event's class with disturb_years_since left NA.
+recent <- ov |>
+  left_join(events, by = "key", relationship = "many-to-many") |>
+  filter(!is.na(ev_type), ev_is_disturbance) |>
+  group_by(grid_id) |>
+  arrange(is.na(ev_year), desc(ev_year), .by_group = TRUE) |>
+  slice(1) |>
+  ungroup() |>
+  transmute(
+    grid_id,
+    disturb_recent_class = ev_class,
+    disturb_recent_label = paste0(ev_type, ifelse(is.na(ev_year), "", paste0(" (", ev_year, ")"))),
+    disturb_recent_yr    = ev_year,
+    disturb_years_since  = ifelse(is.na(ev_year), NA_real_, years_since_ref - ev_year)
+  )
+
 ## ---- 6. Join back onto the full grid --------------------------------------
 grid <- grid |>
   left_join(cell_events, by = "grid_id") |>
   left_join(max_frac, by = "grid_id") |>
+  left_join(majority, by = "grid_id") |>
+  left_join(recent, by = "grid_id") |>
   mutate(
-    disturb_history   = ifelse(is.na(disturb_history), "Not Mapped", disturb_history),
-    disturb_n_events  = ifelse(is.na(disturb_n_events), 0L, disturb_n_events),
-    disturb_max_frac  = ifelse(is.na(disturb_max_frac), 0, disturb_max_frac)
+    disturb_majority      = ifelse(is.na(disturb_majority), "Not Mapped", disturb_majority),
+    disturb_majority_frac = ifelse(is.na(disturb_majority_frac), 0, disturb_majority_frac),
+    disturb_recent_class  = ifelse(is.na(disturb_recent_class), "Not Mapped", disturb_recent_class),
+    disturb_recent_label  = ifelse(is.na(disturb_recent_label), "Not Mapped", disturb_recent_label),
+    disturb_history        = ifelse(is.na(disturb_history), "Not Mapped", disturb_history),
+    disturb_n_events       = ifelse(is.na(disturb_n_events), 0L, disturb_n_events),
+    disturb_max_frac       = ifelse(is.na(disturb_max_frac), 0, disturb_max_frac)
   ) |>
   select(-cell_area)
 
@@ -285,8 +403,13 @@ cat("Labeled", nrow(grid), "cells\n")
 cat("Not Mapped:", sum(grid$disturb_history == "Not Mapped"),
     sprintf("(%.1f%%)\n", 100 * mean(grid$disturb_history == "Not Mapped")))
 cat("Cells with >1 event:", sum(grid$disturb_n_events > 1), "\n")
-cat("Grid ->", grid_out, "\n")
+cat("\ndisturb_recent_class distribution:\n")
+print(sort(table(grid$disturb_recent_class), decreasing = TRUE))
+cat("\nGrid ->", grid_out, "\n")
 write_earth_views(grid, grid_kml_out, grid_shp_out, "disturb_history",
-                   c(disturb_history = "dist_hist", disturb_n_events = "dist_nevt",
+                   c(disturb_majority = "dist_majr", disturb_majority_frac = "dist_mjfr",
+                     disturb_recent_class = "dist_rcls", disturb_recent_label = "dist_rlab",
+                     disturb_recent_yr = "dist_ryr", disturb_years_since = "dist_yrsn",
+                     disturb_history = "dist_hist", disturb_n_events = "dist_nevt",
                      disturb_first_yr = "dist_fyr", disturb_last_yr = "dist_lyr",
                      disturb_max_frac = "dist_mfrc"))
