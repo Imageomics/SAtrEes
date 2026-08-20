@@ -1,4 +1,4 @@
-"""Training sweep for 16K-latent SAEs on Cambridge butterflies (384p, v1.6)."""
+"""Training sweep for 16K-latent SAEs on flyover data (256 patches)."""
 
 
 def make_cfgs() -> list[dict]:
