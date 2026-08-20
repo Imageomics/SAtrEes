@@ -1,36 +1,80 @@
 # SAtrEes
-Extract land-use history from RGB images of tree crowns.
 
-# HARV RGB 25 m Gridding & Cropping
+Extract land-use disturbance history for NEON Harvard Forest (HARV) tree crowns from RGB airborne imagery, gridded at sub-meter resolution.
 
-Crops the NEON RGB camera mosaic (AOP product [DP3.30010.001](https://data.neonscience.org/data-products/DP3.30010.001)) at the HARV site to a 25 m grid, saving one GeoTIFF per cell, and writes a nested 16 × 16 sub-grid (1.5625 m sub-cells) as a vector file. One preprocessing step in a larger forest-scaling project.
+The pipeline builds a fine-grained grid over the HARV Airborne Observation Platform (AOP) footprint, crops NEON RGB mosaic imagery to it, and labels every grid cell with its disturbance history (agricultural abandonment, natural disturbance, the 1938 hurricane, and silviculture treatments) drawn from the Harvard Forest land-use history GIS archive.
+
+## Repository structure
+
+```
+SAtrEes/
+├── Grid_and_crop_HARV_RGB.R          # build the 25m/16x16 sub-grid and crop RGB tiles to it
+├── Grid_and_crop_HARV_RGB.sh         # SLURM submission script for the above (OSC)
+├── scripts/
+│   ├── Label_grid_disturbance_history.R      # label every grid cell with disturbance history
+│   └── HARV_grid_25m_disturbance_metadata.csv # field-by-field schema for the labeled grid
+└── data/
+    ├── hf110_land_use_history/       # source GIS archive (Harvard Forest Data Archive: HF110)
+    └── *.csv                         # small derived summary tables (see below)
+```
+
+Large geospatial outputs (`.gpkg`/`.shp`/`.kml` grids and disturbance layers) and the full attribute-table export are generated locally by the scripts above and are not tracked in this repository — see [Reproducing the outputs](#reproducing-the-outputs).
 
 ## Requirements
 
-- R (tested with 4.4.0) with `sf` and `terra`
+R (tested with 4.4.0) with the `sf` and `terra` packages (`Label_grid_disturbance_history.R` also uses `dplyr`); the `Grid_and_crop_HARV_RGB.sh` SLURM script loads GDAL/PROJ modules on OSC.
 
-## Usage
+## User guide
+
+### 1. Build the grid
+
+`Grid_and_crop_HARV_RGB.R` builds a 25 m grid aligned to the NEON 1 km RGB mosaic tile boundaries (AOP product [DP3.30010.001](https://data.neonscience.org/data-products/DP3.30010.001)), crops the mosaic to each 25 m cell, and nests a 16×16 sub-grid (~1.56 m sub-cells) inside each parent cell. It's designed to run tile-at-a-time to stay memory-flat.
 
 ```bash
-Rscript Grid_and_Crop_HARV_RGB.R
+Rscript Grid_and_crop_HARV_RGB.R
 ```
 
-Paths, `site`, `cell_size` (25 m), and `n_sub` (16) are set at the top of the script. Two toggles control the work:
+Paths, `site`, `cell_size` (25 m), and `n_sub` (16) are set at the top of the script. Two toggles let a run be split if wall-clock time is tight:
 
 - `do_crops` — write the 25 m RGB crops
-- `do_subgrid` — write the 16 × 16 sub-grid vector
+- `do_subgrid` — write the 16×16 sub-grid vector (heavy: ~256 × number of cells)
 
-The sub-grid vector is large (~256 × number of cells). If the time usage is tight, run once with `do_subgrid = FALSE`, then again with `do_crops = FALSE`; `grid_id` is deterministic, so IDs match across passes.
+`grid_id` is assigned deterministically, so IDs match across separate `do_crops`/`do_subgrid` passes. Submit via `Grid_and_crop_HARV_RGB.sh` (SLURM/OSC).
 
-## Inputs
+**Inputs:**
+- `<site>_Tiles_NorthBoundary.shp` — AOP tiles defining the grid extent
+- NEON RGB mosaic tiles (DP3.30010.001)
 
-- `HARV_Tiles_NorthBoundary.shp` — AOP tiles for the northern boundary (defines the grid extent)
-- NEON RGB mosaic tiles (1 km mosaic tiles from 2022 at HARV)
+**Outputs** (written under `out_dir`, set in the script):
+- `Shapefiles/<site>_grid_25m.shp` — 25 m grid
+- `Shapefiles/<site>_grid_25m_sub16.gpkg` — nested 16×16 sub-grid
+- `Imagery/NEON/<site>/RGB_256px_crops/*.tif` — one RGB crop per parent cell
 
-## Outputs
+### 2. Label disturbance history
 
-Written to `out_dir` (set in the script):
+`scripts/Label_grid_disturbance_history.R` intersects the grid against four source layers in `data/hf110_land_use_history/hf110-01-gis.zip`:
 
-- `Shapefiles/HARV_grid_25m.shp` — 25 m grid
-- `Shapefiles/HARV_grid_25m_sub16.gpkg` — nested 16 × 16 sub-grid
-- `Imagery/NEON/HARV/RGB_25m_crops/*.tif` — one RGB crop per 25 m cell
+| Layer | Covers |
+|---|---|
+| `ph_ag_abandonment` | field-abandonment + cutting years |
+| `ph_natural_disturbance2` | ice/wind/tornado/fire/snow events |
+| `1938_hurricane_damage` | 1938 hurricane damage class (fixed year) |
+| `silviculture_treatments_08_21_2010` | dated management-treatment log |
+
+Each grid cell is labeled at the sub-cell level (one label per ~1.56 m sub-cell, not pooled across a parent cell) with:
+
+- **`disturb_majority`** — the dominant source layer by area, labeled with its most recent dated event
+- **`disturb_recent_class`** — the class of whichever dated event (across all 4 layers) is most recent, using a 9-class taxonomy (see `scripts/HARV_grid_25m_disturbance_metadata.csv` for the full field schema and valid values)
+- **`disturb_history`** — every dated event on record for the cell, oldest → newest
+
+Output is written as a labeled grid (`HARV_grid_25m_disturbance` / `HARV_grid_256px_sub16_disturbance`) and a combined source-history layer (`HARV_disturbance_history_combined`, one row per original source polygon), each in `.gpkg` (full fidelity), `.kml` (Google Earth), and `.shp` (lat/lon reprojected, for Google Earth Pro import).
+
+**Input data:** source GIS layers come from the [Harvard Forest Data Archive dataset HF110](https://harvardforest.fas.harvard.edu/harvard-forest-data-archive), Land-use History (Harvard Forest, 1830–2010). The archive is stored locally at `data/hf110_land_use_history/hf110-01-gis.zip` and is not modified by the pipeline.
+
+## Reproducing the outputs
+
+Outputs are large (the full 16×16 sub-grid disturbance layer is several GB) and are generated to the repository root / `data/` locally — they are gitignored rather than committed.
+
+## License
+
+[MIT](LICENSE)
