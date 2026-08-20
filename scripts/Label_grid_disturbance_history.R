@@ -310,6 +310,20 @@ grid <- st_read(grid_in, quiet = TRUE)
 grid$cell_area <- as.numeric(st_area(grid))
 regions <- st_transform(regions, st_crs(grid))
 
+## Cells are labeled per row of `grid`, keyed on cell_uid. On a sub-gridded
+## input (sub_col/sub_row present, e.g. the 16x16 sub-grid from
+## Grid_and_crop_HARV_RGB.R) grid_id alone is the PARENT cell id and repeats
+## across all of a parent's sub-cells, so cell_uid folds sub_col/sub_row in
+## too - each fine sub-cell then gets its own independent label instead of
+## inheriting one label pooled across its whole parent cell. On a plain grid
+## with no sub-cells, cell_uid just falls back to grid_id.
+has_subcells <- all(c("sub_col", "sub_row") %in% names(grid))
+grid$cell_uid <- if (has_subcells) {
+  paste(grid$grid_id, grid$sub_col, grid$sub_row, sep = "_")
+} else {
+  as.character(grid$grid_id)
+}
+
 ov <- st_intersection(st_make_valid(grid), regions)
 ov$ov_area <- as.numeric(st_area(ov))
 ov <- st_drop_geometry(ov) |>
@@ -320,11 +334,11 @@ ov <- st_drop_geometry(ov) |>
 cell_events <- ov |>
   left_join(events, by = "key", relationship = "many-to-many") |>
   filter(!is.na(ev_type)) |>
-  rename(id = grid_id) |>
+  rename(id = cell_uid) |>
   summarize_events() |>
-  rename(grid_id = id)
+  rename(cell_uid = id)
 
-max_frac <- ov |> group_by(grid_id) |> summarise(disturb_max_frac = max(frac), .groups = "drop")
+max_frac <- ov |> group_by(cell_uid) |> summarise(disturb_max_frac = max(frac), .groups = "drop")
 
 ## ---- 5b. Majority-wins main label -----------------------------------------
 ## "Majority" is decided at the source-layer level (Field abandonment /
@@ -340,22 +354,22 @@ layer_label <- c(aband = "Field abandonment", natdist = "Natural disturbance",
                   hurr = "1938 hurricane", silv = "Silviculture treatment")
 ov$source_layer <- layer_label[sub("_[0-9]+$", "", ov$key)]
 
-layer_area <- ov |> group_by(grid_id, source_layer) |> summarise(layer_frac = sum(frac), .groups = "drop")
-majority_layer <- layer_area |> group_by(grid_id) |> slice_max(layer_frac, n = 1, with_ties = FALSE) |> ungroup()
+layer_area <- ov |> group_by(cell_uid, source_layer) |> summarise(layer_frac = sum(frac), .groups = "drop")
+majority_layer <- layer_area |> group_by(cell_uid) |> slice_max(layer_frac, n = 1, with_ties = FALSE) |> ungroup()
 
 majority_label <- ov |>
-  inner_join(majority_layer, by = c("grid_id", "source_layer")) |>
+  inner_join(majority_layer, by = c("cell_uid", "source_layer")) |>
   left_join(events, by = "key", relationship = "many-to-many") |>
   filter(!is.na(ev_type)) |>
-  group_by(grid_id) |>
+  group_by(cell_uid) |>
   arrange(is.na(ev_year), desc(ev_year), .by_group = TRUE) |>
   slice(1) |>
   ungroup() |>
-  transmute(grid_id, disturb_majority = paste0(ev_type, ifelse(is.na(ev_year), "", paste0(" (", ev_year, ")"))))
+  transmute(cell_uid, disturb_majority = paste0(ev_type, ifelse(is.na(ev_year), "", paste0(" (", ev_year, ")"))))
 
 majority <- majority_layer |>
-  select(grid_id, disturb_majority_frac = layer_frac) |>
-  left_join(majority_label, by = "grid_id")
+  select(cell_uid, disturb_majority_frac = layer_frac) |>
+  left_join(majority_label, by = "cell_uid")
 
 ## ---- 5c. Most-recent-disturbance classification ---------------------------
 ## Time label, independent of the area-based majority label above: whichever
@@ -368,12 +382,12 @@ majority <- majority_layer |>
 recent <- ov |>
   left_join(events, by = "key", relationship = "many-to-many") |>
   filter(!is.na(ev_type), ev_is_disturbance) |>
-  group_by(grid_id) |>
+  group_by(cell_uid) |>
   arrange(is.na(ev_year), desc(ev_year), .by_group = TRUE) |>
   slice(1) |>
   ungroup() |>
   transmute(
-    grid_id,
+    cell_uid,
     disturb_recent_class = ev_class,
     disturb_recent_label = paste0(ev_type, ifelse(is.na(ev_year), "", paste0(" (", ev_year, ")"))),
     disturb_recent_yr    = ev_year,
@@ -381,11 +395,14 @@ recent <- ov |>
   )
 
 ## ---- 6. Join back onto the full grid --------------------------------------
+## Joined on cell_uid (not grid_id) so a sub-gridded input gets each sub-cell
+## its own label instead of one label pooled across its whole parent cell -
+## see the cell_uid note at step 4.
 grid <- grid |>
-  left_join(cell_events, by = "grid_id") |>
-  left_join(max_frac, by = "grid_id") |>
-  left_join(majority, by = "grid_id") |>
-  left_join(recent, by = "grid_id") |>
+  left_join(cell_events, by = "cell_uid") |>
+  left_join(max_frac, by = "cell_uid") |>
+  left_join(majority, by = "cell_uid") |>
+  left_join(recent, by = "cell_uid") |>
   mutate(
     disturb_majority      = ifelse(is.na(disturb_majority), "Not Mapped", disturb_majority),
     disturb_majority_frac = ifelse(is.na(disturb_majority_frac), 0, disturb_majority_frac),
@@ -395,7 +412,7 @@ grid <- grid |>
     disturb_n_events       = ifelse(is.na(disturb_n_events), 0L, disturb_n_events),
     disturb_max_frac       = ifelse(is.na(disturb_max_frac), 0, disturb_max_frac)
   ) |>
-  select(-cell_area)
+  select(-cell_area, -cell_uid)
 
 st_write(grid, grid_out, delete_dsn = TRUE, quiet = TRUE)
 
