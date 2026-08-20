@@ -8,6 +8,7 @@ dependencies = [
     "saev",
     # pydantic >= 2.12 emits UnsupportedFieldAttributeWarning for wandb's generated models.
     "pydantic>=2.5.2,<2.12",
+    "streamlit>=1.50",
 ]
 
 [tool.uv.sources]
