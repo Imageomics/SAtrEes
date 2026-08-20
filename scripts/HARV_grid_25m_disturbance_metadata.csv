@@ -1,0 +1,16 @@
+field,type,description,valid_values
+grid_id,integer,Unique identifier for the grid cell (carried through unchanged from the input grid).,
+sub_col,integer,Sub-column index of this cell within its parent 25m grid cell (from the sub16 grid layer).,
+sub_row,integer,Sub-row index of this cell within its parent 25m grid cell (from the sub16 grid layer).,
+disturb_majority,text,"Area-weighted majority-wins main label. Whichever of the 4 source layers (Field abandonment, Natural disturbance, 1938 hurricane, Silviculture treatment) covers the largest fraction of the cell wins; the label text is that layer's most recent dated event in the cell. ""Not Mapped"" if no source layer overlaps the cell.",
+disturb_majority_frac,real (0-1),Fraction of the cell's area covered by the layer named in disturb_majority. 0 if Not Mapped.,
+disturb_recent_class,text,"Time-based main label. The class of whichever dated disturbance event in the cell (across all 4 source layers) is most recent. Silviculture entries that are monitoring-only (inspection/photo/measurement, no structural keyword) are excluded when picking ""most recent"" - they still appear in disturb_history, just never set this field. ""Not Mapped"" if no disturbance event overlaps the cell.","Agricultural abandonment | Agricultural cutting | 1938 hurricane | Natural disturbance | Silviculture - clearcut | Silviculture - salvage | Silviculture - regen harvest | Silviculture - thinning | Silviculture - other | Not Mapped"
+disturb_recent_label,text,"The most-recent disturbance event's raw text plus year, e.g. ""Silviculture - clearcut (1962)"". ""Not Mapped"" if none.",
+disturb_recent_yr,integer,Year of the most-recent disturbance event (the one behind disturb_recent_class / disturb_recent_label). NA if Not Mapped or if the cell's only events are undated.,
+disturb_years_since,integer,"2022 minus disturb_recent_yr (2022 is a fixed reference year, not ""today"" - re-derive if a different reference date is needed). NA if disturb_recent_yr is NA.",
+disturb_history,text,"Full chronological list of every dated event on record for the cell (oldest to newest), across all 4 source layers, semicolon-separated as ""<event type> (<year>)"". Undated events are appended last, tagged ""(undated)"". ""Not Mapped"" if no source layer overlaps the cell.",
+disturb_n_events,integer,Count of distinct (event type, year) pairs listed in disturb_history. 0 if Not Mapped.,
+disturb_first_yr,integer,Earliest dated event year in disturb_history. NA if Not Mapped or all events in the cell are undated.,
+disturb_last_yr,integer,Latest dated event year in disturb_history. NA if Not Mapped or all events in the cell are undated.,
+disturb_max_frac,real (0-1),"Largest area fraction any single source-layer polygon covers of the cell - a rough confidence indicator (low values mean the cell is only marginally touched by mapped source polygons, e.g. a sliver at the edge). 0 if Not Mapped.",
+geom,geometry (Polygon),Cell boundary. CRS matches the input grid file (WGS84 / UTM 18N for the current HARV grids).,
