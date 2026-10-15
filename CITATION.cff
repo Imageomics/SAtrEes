@@ -1,0 +1,43 @@
+abstract: >-
+  FloraPalooza project to extract land-use history from RGB images of tree crowns.
+authors:
+- family-names: "Boving"
+  given-names: "Indra"
+  orcid: "https://orcid.org/0000-0002-2176-2819"
+- family-names: "East"
+  given-names: "Alyson"
+  orcid: "https://orcid.org/0000-0003-1143-1255"
+- family-names: "Campolongo"
+  given-names: "Elizabeth G"
+  orcid: "https://orcid.org/0000-0003-0846-2413"
+- family-names: "Landsbergen"
+  given-names: "Kim"
+  orcid: "https://orcid.org/0000-0002-5482-8706"
+- family-names: "Beattie"
+  given-names: "Jake"
+- family-names: "Liu"
+  given-names: "Fangxun"
+cff-version: 1.2.0
+date-released: "2026-08-20"
+identifiers:
+  - description: "The GitHub release URL of tag 1.0.0."
+    type: url
+    value: "https://github.com/imageomics/satrees/releases/tag/1.0.0"
+  - description: "The GitHub source tree URL aligned to release tag 1.0.0."
+    type: url
+    value: "https://github.com/imageomics/satrees/tree/1.0.0"
+keywords:
+  - "imageomics"
+  - "disturbance"
+  - "flyover-data"
+  - "harvard-forest"
+  - "land-use"
+  - "palooza"
+  - "rgb"
+  - "tree-crowns"
+license: "MIT"
+message: "If you find this work helpful in your research, please cite it."
+repository-code: "https://github.com/imageomics/satrees"
+title: "SAtrEes"
+version: "1.0.0"
+type: software
